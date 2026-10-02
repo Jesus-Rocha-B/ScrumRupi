@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: scrum-rupi
+    runtime: node
+    plan: free
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: TEAM_ACCESS_CODE
+        generateValue: true
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: DB_SSL
+        value: "true"
