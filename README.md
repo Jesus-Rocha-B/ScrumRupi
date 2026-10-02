@@ -17,7 +17,7 @@ Aplicación Scrum del equipo de Rupi (Jesús Rocha, Erick Gamarra y José Contre
 3. Inicia la API con `npm run dev:api`.
 4. En otra terminal, inicia Vite con `npm run dev`.
 
-Vite reenvía `/api` a la API local. Al entrar por primera vez, los datos iniciales del backlog se copian a MySQL. Los secretos solo van en `.env` o en la configuración privada del proveedor; nunca se suben al repositorio.
+Vite reenvía `/api` a la API local. Al entrar por primera vez, los datos iniciales del backlog se copian a MySQL. En Aiven configura `DATABASE_CA_CERT` con el certificado de CA del proyecto descargado desde la vista Overview del servicio, para que Node valide la identidad TLS. Los secretos solo van en `.env` o en la configuración privada del proveedor; nunca se suben al repositorio.
 
 ## Publicación
 

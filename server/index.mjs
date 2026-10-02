@@ -13,6 +13,7 @@ const production = process.env.NODE_ENV === 'production'
 const sessionCookie = 'scrumrupi_session'
 const loginAttempts = new Map()
 const databaseUrl = process.env.DATABASE_URL ? new URL(process.env.DATABASE_URL) : null
+const databaseCaCertificate = process.env.DATABASE_CA_CERT?.replaceAll('\\n', '\n')
 const pool = mysql.createPool({
   host: databaseUrl?.hostname,
   port: Number(databaseUrl?.port || 3306),
@@ -22,7 +23,10 @@ const pool = mysql.createPool({
   waitForConnections: true,
   connectionLimit: 5,
   timezone: 'Z',
-  ssl: process.env.DB_SSL === 'false' ? undefined : { rejectUnauthorized: true },
+  ssl: process.env.DB_SSL === 'false' ? undefined : {
+    rejectUnauthorized: true,
+    ...(databaseCaCertificate ? { ca: databaseCaCertificate } : {}),
+  },
 })
 
 if (!process.env.DATABASE_URL || !process.env.TEAM_ACCESS_CODE || !process.env.SESSION_SECRET) {
