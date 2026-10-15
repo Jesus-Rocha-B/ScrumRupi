@@ -821,6 +821,165 @@ function StoriesPage({
   </>
 }
 
+function CardAssigneeDropdown({
+  value,
+  onChange,
+}: {
+  value: MemberId | null
+  onChange: (memberId: MemberId | null) => void
+}) {
+  const [isOpen, setIsOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (ref.current && !ref.current.contains(event.target as Node)) {
+        setIsOpen(false)
+      }
+    }
+    if (isOpen) {
+      document.addEventListener('mousedown', handleClickOutside)
+      return () => document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [isOpen])
+
+  const currentMember = value ? initialsName(value) : null
+
+  return (
+    <div className={`card-dropdown-wrapper ${isOpen ? 'is-open' : ''}`} ref={ref}>
+      <button
+        type="button"
+        className="card-dropdown-trigger"
+        onClick={() => setIsOpen((prev) => !prev)}
+        aria-haspopup="listbox"
+        aria-expanded={isOpen}
+      >
+        <span className="card-dropdown-selected">
+          {currentMember ? (
+            <>
+              <span className={`legend-swatch ${currentMember.color}`} />
+              <span className="card-dropdown-text">{currentMember.name}</span>
+            </>
+          ) : (
+            <>
+              <span className="legend-swatch unassigned" />
+              <span className="card-dropdown-text unassigned-text">Sin asignar</span>
+            </>
+          )}
+        </span>
+        <ChevronDown size={13} className={`card-dropdown-chevron ${isOpen ? 'is-rotated' : ''}`} />
+      </button>
+
+      {isOpen && (
+        <div className="card-dropdown-menu" role="listbox">
+          <button
+            type="button"
+            className={`card-dropdown-option ${value === null ? 'is-active' : ''}`}
+            onClick={() => {
+              onChange(null)
+              setIsOpen(false)
+            }}
+            role="option"
+            aria-selected={value === null}
+          >
+            <span className="legend-swatch unassigned" />
+            <span>Sin asignar</span>
+            {value === null && <Check size={13} className="dropdown-check" />}
+          </button>
+          {members.map((member) => (
+            <button
+              type="button"
+              key={member.id}
+              className={`card-dropdown-option ${value === member.id ? 'is-active' : ''}`}
+              onClick={() => {
+                onChange(member.id)
+                setIsOpen(false)
+              }}
+              role="option"
+              aria-selected={value === member.id}
+            >
+              <span className={`legend-swatch ${member.color}`} />
+              <span className="legend-member-initials">{member.initials}</span>
+              <span>{member.name}</span>
+              {value === member.id && <Check size={13} className="dropdown-check" />}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function CardStatusDropdown({
+  value,
+  onChange,
+}: {
+  value: StoryStatus
+  onChange: (status: StoryStatus) => void
+}) {
+  const [isOpen, setIsOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (ref.current && !ref.current.contains(event.target as Node)) {
+        setIsOpen(false)
+      }
+    }
+    if (isOpen) {
+      document.addEventListener('mousedown', handleClickOutside)
+      return () => document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [isOpen])
+
+  function statusDotClass(status: StoryStatus) {
+    if (status === 'En progreso') return 'en-progreso'
+    if (status === 'En revisión') return 'en-revisión'
+    if (status === 'Hecha') return 'hecha'
+    return 'pendiente'
+  }
+
+  return (
+    <div className={`card-dropdown-wrapper ${isOpen ? 'is-open' : ''}`} ref={ref}>
+      <button
+        type="button"
+        className="card-dropdown-trigger"
+        onClick={() => setIsOpen((prev) => !prev)}
+        aria-haspopup="listbox"
+        aria-expanded={isOpen}
+      >
+        <span className="card-dropdown-selected">
+          <span className={`column-dot ${statusDotClass(value)}`} />
+          <span className="card-dropdown-text">{displayStatus(value)}</span>
+        </span>
+        <ChevronDown size={13} className={`card-dropdown-chevron ${isOpen ? 'is-rotated' : ''}`} />
+      </button>
+
+      {isOpen && (
+        <div className="card-dropdown-menu" role="listbox">
+          {storyStatuses.map((status) => (
+            <button
+              type="button"
+              key={status}
+              className={`card-dropdown-option ${value === status ? 'is-active' : ''}`}
+              onClick={() => {
+                onChange(status)
+                setIsOpen(false)
+              }}
+              role="option"
+              aria-selected={value === status}
+            >
+              <span className={`column-dot ${statusDotClass(status)}`} />
+              <span>{displayStatus(status)}</span>
+              {value === status && <Check size={13} className="dropdown-check" />}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function StoryCard({ story, onChange, onAddTask, onToggleTask, onRemoveTask, onAddUpdate }: { story: UserStory; onChange: (id: string, changes: Partial<UserStory>) => void; onAddTask: (storyId: string, title: string) => void; onToggleTask: (storyId: string, taskId: string) => void; onRemoveTask: (storyId: string, taskId: string) => void; onAddUpdate: (id: string) => void }) {
   const completedTasks = story.tasks.filter((task) => task.completed).length
   const member = story.assignee ? initialsName(story.assignee) : null
@@ -857,25 +1016,25 @@ function StoryCard({ story, onChange, onAddTask, onToggleTask, onRemoveTask, onA
         <div className="progress-track"><span style={{ width: `${story.progress}%` }} /></div>
       </div>
       <div className="story-card-controls">
-        <label>
-          <span>Responsable</span>
-          <div className="select-with-avatar">
-            {story.assignee ? <Avatar memberId={story.assignee} small /> : <span className="avatar avatar-small unassigned">?</span>}
-            <select
-              value={story.assignee ?? ''}
-              onChange={(event) => onChange(story.id, { assignee: (event.target.value || null) as MemberId | null })}
-            >
-              <option value="">Sin asignar</option>
-              {members.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
-            </select>
-          </div>
-        </label>
-        <label>
-          <span>Estado</span>
-          <select value={story.status} onChange={(event) => { const status = event.target.value as StoryStatus; onChange(story.id, { status, progress: status === 'Pendiente' ? 0 : status === 'Hecha' ? 100 : status === 'En revisión' ? Math.max(story.progress, 75) : Math.max(story.progress, 25) }) }}>
-            {storyStatuses.map((status) => <option key={status} value={status}>{displayStatus(status)}</option>)}
-          </select>
-        </label>
+        <div className="story-control-field">
+          <span className="control-label">Responsable</span>
+          <CardAssigneeDropdown
+            value={story.assignee}
+            onChange={(memberId) => onChange(story.id, { assignee: memberId })}
+          />
+        </div>
+        <div className="story-control-field">
+          <span className="control-label">Estado</span>
+          <CardStatusDropdown
+            value={story.status}
+            onChange={(status) => {
+              onChange(story.id, {
+                status,
+                progress: status === 'Pendiente' ? 0 : status === 'Hecha' ? 100 : status === 'En revisión' ? Math.max(story.progress, 75) : Math.max(story.progress, 25),
+              })
+            }}
+          />
+        </div>
       </div>
       <details className="story-tasks">
         <summary><ListTodo size={14} /><span>Tareas</span><b>{completedTasks}/{story.tasks.length}</b></summary>
