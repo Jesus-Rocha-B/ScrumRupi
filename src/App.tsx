@@ -3,7 +3,7 @@ import {
   Activity, ArrowRight, CalendarDays, Check,
   CheckCircle2, CircleDot, Clock3, Code2, ExternalLink, Flag,
   FolderGit2, GitCommitHorizontal, ListChecks, ListFilter, ListTodo, Plus, Radio, RotateCw,
-  Search, Sparkles, Users, Video, X,
+  Search, Sparkles, Users, Video, X, ChevronDown,
 } from 'lucide-react'
 import {
   loadScrumData, members, storyStatuses,
@@ -88,9 +88,8 @@ function App() {
   const [modal, setModal] = useState<ModalState>(null)
   const [searchText, setSearchText] = useState('')
   const [assigneeFilter, setAssigneeFilter] = useState<string>('all')
-  const [rangePreset, setRangePreset] = useState<string>('all')
-  const [customRangeStart, setCustomRangeStart] = useState<string>('1')
-  const [customRangeEnd, setCustomRangeEnd] = useState<string>('12')
+  const [rangeStart, setRangeStart] = useState<string>('')
+  const [rangeEnd, setRangeEnd] = useState<string>('')
   const [commits, setCommits] = useState<Commit[]>(fallbackCommits)
   const [commitState, setCommitState] = useState<'loading' | 'connected' | 'fallback'>('loading')
   const [refreshingCommits, setRefreshingCommits] = useState(false)
@@ -285,17 +284,8 @@ function App() {
     .sort((a, b) => a.startsAt.localeCompare(b.startsAt)), [data.meetings, mountedAt])
 
   const filteredStories = useMemo(() => {
-    let rangeStart = 1
-    let rangeEnd = Infinity
-
-    if (rangePreset === 'custom') {
-      rangeStart = Math.max(1, parseInt(customRangeStart, 10) || 1)
-      rangeEnd = Math.max(rangeStart, parseInt(customRangeEnd, 10) || 60)
-    } else if (rangePreset !== 'all') {
-      const [startStr, endStr] = rangePreset.split('-')
-      rangeStart = parseInt(startStr, 10) || 1
-      rangeEnd = parseInt(endStr, 10) || Infinity
-    }
+    const startNum = rangeStart.trim() !== '' ? Math.max(1, parseInt(rangeStart, 10) || 1) : null
+    const endNum = rangeEnd.trim() !== '' ? Math.max(1, parseInt(rangeEnd, 10) || 60) : null
 
     return data.stories.filter((story) => {
       // 1. Búsqueda por texto (id, título o épica)
@@ -311,15 +301,16 @@ function App() {
         if (story.assignee !== assigneeFilter) return false
       }
 
-      // 3. Filtro por rango de historias (HU-xx)
+      // 3. Filtro por rango personalizado de historias (HU-xx)
       const storyNum = parseStoryNumber(story.id)
-      if (storyNum > 0 && (storyNum < rangeStart || storyNum > rangeEnd)) {
-        return false
+      if (storyNum > 0) {
+        if (startNum !== null && storyNum < startNum) return false
+        if (endNum !== null && storyNum > endNum) return false
       }
 
       return true
     })
-  }, [data.stories, searchText, assigneeFilter, rangePreset, customRangeStart, customRangeEnd])
+  }, [data.stories, searchText, assigneeFilter, rangeStart, rangeEnd])
 
   function addMeeting(meeting: ScrumMeeting) {
     setData((current) => ({ ...current, meetings: [...current.meetings, meeting] }))
@@ -444,12 +435,10 @@ function App() {
             onQuery={setSearchText}
             assigneeFilter={assigneeFilter}
             onAssigneeFilter={setAssigneeFilter}
-            rangePreset={rangePreset}
-            onRangePreset={setRangePreset}
-            customRangeStart={customRangeStart}
-            onCustomRangeStart={setCustomRangeStart}
-            customRangeEnd={customRangeEnd}
-            onCustomRangeEnd={setCustomRangeEnd}
+            rangeStart={rangeStart}
+            onRangeStart={setRangeStart}
+            rangeEnd={rangeEnd}
+            onRangeEnd={setRangeEnd}
             onChange={changeStory}
             onAddTask={addStoryTask}
             onToggleTask={toggleStoryTask}
@@ -590,6 +579,119 @@ function EmptyInline({ title, copy, action }: { title: string; copy: string; act
   return <div className="empty-inline"><span className="empty-symbol"><CalendarDays size={19} /></span><b>{title}</b><p>{copy}</p>{action}</div>
 }
 
+function AssigneeFilterDropdown({
+  value,
+  onChange,
+}: {
+  value: string
+  onChange: (memberId: string) => void
+}) {
+  const [isOpen, setIsOpen] = useState(false)
+  const containerRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+        setIsOpen(false)
+      }
+    }
+    if (isOpen) {
+      document.addEventListener('mousedown', handleClickOutside)
+      return () => document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [isOpen])
+
+  const selectedMember = members.find((m) => m.id === value)
+
+  return (
+    <div className="custom-dropdown-container" ref={containerRef}>
+      <button
+        type="button"
+        className={`custom-dropdown-trigger ${value !== 'all' ? (selectedMember ? `is-${selectedMember.color}` : 'is-unassigned') : ''}`}
+        onClick={() => setIsOpen((prev) => !prev)}
+        aria-haspopup="listbox"
+        aria-expanded={isOpen}
+      >
+        <span className="dropdown-trigger-left">
+          {value === 'all' && (
+            <>
+              <Users size={14} className="dropdown-trigger-icon" />
+              <span className="dropdown-trigger-label">Todos los responsables</span>
+            </>
+          )}
+          {selectedMember && (
+            <>
+              <span className={`legend-swatch ${selectedMember.color}`} />
+              <span className="legend-member-initials">{selectedMember.initials}</span>
+              <span className="dropdown-trigger-label">{selectedMember.name}</span>
+            </>
+          )}
+          {value === 'unassigned' && (
+            <>
+              <span className="legend-swatch unassigned" />
+              <span className="dropdown-trigger-label">Sin asignar</span>
+            </>
+          )}
+        </span>
+        <ChevronDown size={14} className={`dropdown-chevron ${isOpen ? 'is-open' : ''}`} />
+      </button>
+
+      {isOpen && (
+        <div className="custom-dropdown-menu" role="listbox">
+          <button
+            type="button"
+            className={`custom-dropdown-option ${value === 'all' ? 'is-selected' : ''}`}
+            onClick={() => {
+              onChange('all')
+              setIsOpen(false)
+            }}
+            role="option"
+            aria-selected={value === 'all'}
+          >
+            <Users size={14} />
+            <span>Todos los responsables</span>
+            {value === 'all' && <Check size={14} className="dropdown-check" />}
+          </button>
+
+          {members.map((member) => (
+            <button
+              type="button"
+              key={member.id}
+              className={`custom-dropdown-option ${value === member.id ? 'is-selected' : ''}`}
+              onClick={() => {
+                onChange(member.id)
+                setIsOpen(false)
+              }}
+              role="option"
+              aria-selected={value === member.id}
+            >
+              <span className={`legend-swatch ${member.color}`} />
+              <span className="legend-member-initials">{member.initials}</span>
+              <span>{member.name}</span>
+              {value === member.id && <Check size={14} className="dropdown-check" />}
+            </button>
+          ))}
+
+          <button
+            type="button"
+            className={`custom-dropdown-option ${value === 'unassigned' ? 'is-selected' : ''}`}
+            onClick={() => {
+              onChange('unassigned')
+              setIsOpen(false)
+            }}
+            role="option"
+            aria-selected={value === 'unassigned'}
+          >
+            <span className="legend-swatch unassigned" />
+            <span>Sin asignar</span>
+            {value === 'unassigned' && <Check size={14} className="dropdown-check" />}
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function StoriesPage({
   stories,
   totalStoriesCount,
@@ -597,12 +699,10 @@ function StoriesPage({
   onQuery,
   assigneeFilter,
   onAssigneeFilter,
-  rangePreset,
-  onRangePreset,
-  customRangeStart,
-  onCustomRangeStart,
-  customRangeEnd,
-  onCustomRangeEnd,
+  rangeStart,
+  onRangeStart,
+  rangeEnd,
+  onRangeEnd,
   onChange,
   onAddTask,
   onToggleTask,
@@ -615,12 +715,10 @@ function StoriesPage({
   onQuery: (value: string) => void
   assigneeFilter: string
   onAssigneeFilter: (value: string) => void
-  rangePreset: string
-  onRangePreset: (value: string) => void
-  customRangeStart: string
-  onCustomRangeStart: (value: string) => void
-  customRangeEnd: string
-  onCustomRangeEnd: (value: string) => void
+  rangeStart: string
+  onRangeStart: (value: string) => void
+  rangeEnd: string
+  onRangeEnd: (value: string) => void
   onChange: (id: string, changes: Partial<UserStory>) => void
   onAddTask: (storyId: string, title: string) => void
   onToggleTask: (storyId: string, taskId: string) => void
@@ -637,62 +735,54 @@ function StoriesPage({
           <input value={query} onChange={(event) => onQuery(event.target.value)} placeholder="Buscar historia o épica…" />
         </label>
 
-        {/* Filtro 1: Responsable */}
-        <div className="filter-select-wrapper">
-          <Users size={15} />
-          <select
-            value={assigneeFilter}
-            onChange={(event) => onAssigneeFilter(event.target.value)}
-            aria-label="Filtrar por responsable"
-          >
-            <option value="all">Todos los responsables</option>
-            {members.map((member) => (
-              <option key={member.id} value={member.id}>{member.name}</option>
-            ))}
-            <option value="unassigned">Sin asignar</option>
-          </select>
-        </div>
+        {/* Filtro 1: Responsable con botón estilo píldora, color a la izquierda y nombre a la derecha */}
+        <AssigneeFilterDropdown
+          value={assigneeFilter}
+          onChange={onAssigneeFilter}
+        />
 
-        {/* Filtro 2: Rango de historias de usuario */}
-        <div className="range-filter-wrapper">
-          <ListFilter size={15} />
-          <select
-            value={rangePreset}
-            onChange={(event) => onRangePreset(event.target.value)}
-            aria-label="Filtrar por rango de historias"
-          >
-            <option value="all">Todas las historias (HU-01 a HU-60)</option>
-            <option value="1-12">HU-01 a HU-12</option>
-            <option value="13-24">HU-13 a HU-24</option>
-            <option value="25-36">HU-25 a HU-36</option>
-            <option value="37-48">HU-37 a HU-48</option>
-            <option value="49-60">HU-49 a HU-60</option>
-            <option value="custom">Rango personalizado…</option>
-          </select>
-
-          {rangePreset === 'custom' && (
-            <div className="custom-range-inputs">
-              <span>De HU-</span>
-              <input
-                type="number"
-                min="1"
-                max="60"
-                placeholder="1"
-                value={customRangeStart}
-                onChange={(event) => onCustomRangeStart(event.target.value)}
-                aria-label="Número inicial de historia"
-              />
-              <span>a HU-</span>
-              <input
-                type="number"
-                min="1"
-                max="60"
-                placeholder="12"
-                value={customRangeEnd}
-                onChange={(event) => onCustomRangeEnd(event.target.value)}
-                aria-label="Número final de historia"
-              />
-            </div>
+        {/* Filtro 2: Rango personalizado de historias (solo rango personalizado) */}
+        <div className="range-filter-pill">
+          <ListFilter size={15} className="range-filter-icon" />
+          <span className="range-filter-prefix">Rango:</span>
+          <div className="range-input-wrapper">
+            <span className="range-input-label">HU-</span>
+            <input
+              type="number"
+              min="1"
+              max="60"
+              placeholder="1"
+              value={rangeStart}
+              onChange={(e) => onRangeStart(e.target.value)}
+              aria-label="Número inicial de historia"
+            />
+          </div>
+          <span className="range-filter-dash">—</span>
+          <div className="range-input-wrapper">
+            <span className="range-input-label">HU-</span>
+            <input
+              type="number"
+              min="1"
+              max="60"
+              placeholder="60"
+              value={rangeEnd}
+              onChange={(e) => onRangeEnd(e.target.value)}
+              aria-label="Número final de historia"
+            />
+          </div>
+          {(rangeStart !== '' || rangeEnd !== '') && (
+            <button
+              type="button"
+              className="range-clear-button"
+              onClick={() => {
+                onRangeStart('')
+                onRangeEnd('')
+              }}
+              title="Limpiar rango"
+              aria-label="Limpiar rango"
+            >
+              <X size={12} />
+            </button>
           )}
         </div>
       </div>
@@ -705,41 +795,21 @@ function StoriesPage({
       </div>
     </section>
 
-    {/* Leyenda explicativa con colores de responsables */}
+    {/* Leyenda explicativa de responsables (no interactiva / solo informativa) */}
     <section className="members-legend" aria-label="Leyenda de responsables">
       <span className="legend-label">Leyenda de responsables:</span>
       <div className="legend-items">
-        <button
-          type="button"
-          className={`legend-pill ${assigneeFilter === 'all' ? 'is-active' : ''}`}
-          onClick={() => onAssigneeFilter('all')}
-          title="Ver historias de todos"
-        >
-          <span className="legend-swatch swatch-all" />
-          <span>Todos</span>
-        </button>
         {members.map((member) => (
-          <button
-            type="button"
-            key={member.id}
-            className={`legend-pill ${assigneeFilter === member.id ? 'is-active' : ''}`}
-            onClick={() => onAssigneeFilter(assigneeFilter === member.id ? 'all' : member.id)}
-            title={`Filtrar por ${member.name}`}
-          >
+          <div key={member.id} className="legend-tag">
             <span className={`legend-swatch ${member.color}`} />
             <span className="legend-member-initials">{member.initials}</span>
             <span>{member.name}</span>
-          </button>
+          </div>
         ))}
-        <button
-          type="button"
-          className={`legend-pill ${assigneeFilter === 'unassigned' ? 'is-active' : ''}`}
-          onClick={() => onAssigneeFilter(assigneeFilter === 'unassigned' ? 'all' : 'unassigned')}
-          title="Ver historias sin asignar"
-        >
+        <div className="legend-tag">
           <span className="legend-swatch unassigned" />
           <span>Sin asignar</span>
-        </button>
+        </div>
       </div>
     </section>
 

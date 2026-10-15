@@ -178,28 +178,48 @@
 .search-box { display: flex; align-items: center; gap: 9px; width: min(280px,100%); height: 38px; padding: 0 11px; border: 1px solid #e8e7e0; border-radius: 9px; background: #fff; color: #98a099; }
 .search-box input { width: 100%; border: 0; outline: 0; background: transparent; color: #46564d; font-size: 10px; }
 .search-box input::placeholder { color: #a6ada6; }
-.filter-select-wrapper, .range-filter-wrapper { display: flex; align-items: center; gap: 6px; height: 38px; padding: 0 10px; border: 1px solid #e8e7e0; border-radius: 9px; background: #fff; color: #79867e; font-size: 10px; }
-.filter-select-wrapper select, .range-filter-wrapper select { border: 0; outline: 0; background: transparent; color: #46564d; font-size: 10px; font-weight: 600; cursor: pointer; }
-.custom-range-inputs { display: flex; align-items: center; gap: 4px; padding-left: 6px; border-left: 1px solid #e8e7e0; color: #79867e; font-size: 9px; }
-.custom-range-inputs input { width: 44px; height: 26px; padding: 0 4px; border: 1px solid #dcdad3; border-radius: 5px; text-align: center; font-size: 10px; color: #3b4b41; }
-.custom-range-inputs input:focus { outline: 1px solid #557d60; border-color: #557d60; }
+.custom-dropdown-container { position: relative; }
+.custom-dropdown-trigger { display: inline-flex; align-items: center; justify-content: space-between; gap: 10px; height: 38px; padding: 0 12px; border: 1px solid #e8e7e0; border-radius: 9px; background: #fff; color: #46564d; font: 600 10px var(--display-font); cursor: pointer; transition: all .15s ease; white-space: nowrap; }
+.custom-dropdown-trigger:hover { border-color: #cbd0c7; background: #fafaf7; }
+.custom-dropdown-trigger.is-coral { border-color: #f1cfc6; background: #fdf6f4; }
+.custom-dropdown-trigger.is-green { border-color: #d1e5d5; background: #f4f9f4; }
+.custom-dropdown-trigger.is-gold { border-color: #f2e3be; background: #fcf9ee; }
+.custom-dropdown-trigger.is-unassigned { border-color: #e5e4dc; background: #fafaf8; }
+.dropdown-trigger-left { display: inline-flex; align-items: center; gap: 7px; }
+.dropdown-trigger-icon { color: #79867e; }
+.dropdown-trigger-label { font-weight: 600; color: #435349; }
+.dropdown-chevron { color: #8c968f; transition: transform .2s ease; }
+.dropdown-chevron.is-open { transform: rotate(180deg); }
+
+.custom-dropdown-menu { position: absolute; top: calc(100% + 5px); left: 0; z-index: 40; display: grid; gap: 3px; min-width: 220px; padding: 6px; border: 1px solid #e6e4dc; border-radius: 11px; background: #fff; box-shadow: 0 10px 25px #18281e18; animation: fade-in .12s ease-out; }
+.custom-dropdown-option { display: flex; align-items: center; gap: 8px; width: 100%; padding: 7px 10px; border: 0; border-radius: 7px; background: transparent; color: #47584e; font: 600 9.5px var(--display-font); cursor: pointer; text-align: left; transition: background .12s ease; }
+.custom-dropdown-option:hover { background: #f3f5f1; }
+.custom-dropdown-option.is-selected { background: #edf3eb; color: #2e4d38; }
+.dropdown-check { margin-left: auto; color: #558760; }
+
+.range-filter-pill { display: inline-flex; align-items: center; gap: 7px; height: 38px; padding: 0 11px; border: 1px solid #e8e7e0; border-radius: 9px; background: #fff; color: #79867e; font-size: 10px; }
+.range-filter-icon { color: #79867e; }
+.range-filter-prefix { font-weight: 700; color: #55665b; font-size: 9px; text-transform: uppercase; letter-spacing: .3px; }
+.range-input-wrapper { display: inline-flex; align-items: center; gap: 2px; background: #f7f6f1; padding: 2px 6px; border-radius: 6px; border: 1px solid #e7e5dc; }
+.range-input-label { font-size: 8.5px; font-weight: 700; color: #838e85; }
+.range-input-wrapper input { width: 32px; height: 22px; border: 0; background: transparent; color: #3b4c41; font: 700 9.5px var(--display-font); text-align: center; outline: 0; }
+.range-filter-dash { color: #9aa29a; font-weight: 600; }
+.range-clear-button { display: grid; place-items: center; width: 18px; height: 18px; margin-left: 2px; padding: 0; border: 0; border-radius: 50%; background: #f0eee8; color: #79857b; cursor: pointer; transition: all .15s ease; }
+.range-clear-button:hover { background: #fde8e3; color: #b14b35; }
+
 .toolbar-hint { display: flex; align-items: center; gap: 7px; color: #909990; font-size: 9px; white-space: nowrap; margin-left: auto; }
 .toolbar-hint .state-dot { width: 6px; height: 6px; flex-basis: 6px; background: #87a774; border-radius: 50%; }
 
 .members-legend { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin: 0 0 15px; padding: 8px 12px; border: 1px solid #eae8df; border-radius: 10px; background: #faf9f5; }
 .legend-label { color: #748077; font: 750 9px var(--display-font); text-transform: uppercase; letter-spacing: .5px; }
 .legend-items { display: flex; flex-wrap: wrap; gap: 6px; }
-.legend-pill { display: inline-flex; align-items: center; gap: 6px; padding: 4px 9px; border: 1px solid #e5e3dc; border-radius: 20px; background: #fff; color: #556258; font-size: 9px; font-weight: 600; cursor: pointer; transition: all .15s ease; }
-.legend-pill:hover { border-color: #cbcfc9; background: #f4f3ed; }
-.legend-pill.is-active { border-color: #475b4f; background: #475b4f; color: #fff; }
-.legend-swatch { width: 8px; height: 8px; border-radius: 50%; }
+.legend-tag { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border: 1px solid #e5e3dc; border-radius: 20px; background: #fff; color: #556258; font-size: 9px; font-weight: 600; cursor: default; user-select: none; }
+.legend-swatch { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
 .legend-swatch.coral { background: #d7664e; }
 .legend-swatch.green { background: #4a8b5e; }
 .legend-swatch.gold { background: #c89531; }
 .legend-swatch.unassigned { background: #abb2aa; }
-.legend-swatch.swatch-all { background: #3b4b41; }
-.legend-pill.is-active .legend-swatch.swatch-all { background: #fff; }
-.legend-member-initials { font-size: 8px; opacity: .75; }
+.legend-member-initials { font-size: 8px; opacity: .75; font-weight: 700; }
 
 .stories-board { display: grid; grid-template-columns: repeat(4,minmax(220px,1fr)); gap: 12px; align-items: start; overflow-x: auto; padding-bottom: 8px; }
 .story-column { min-height: 220px; padding: 11px; border: 1px solid #e9e8e1; border-radius: 12px; background: #f0efea; }
