@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } 
 import {
   Activity, ArrowRight, CalendarDays, Check,
   CheckCircle2, CircleDot, Clock3, Code2, ExternalLink, Flag,
-  FolderGit2, GitCommitHorizontal, ListChecks, ListTodo, Plus, Radio, RotateCw,
+  FolderGit2, GitCommitHorizontal, ListChecks, ListFilter, ListTodo, Plus, Radio, RotateCw,
   Search, Sparkles, Users, Video, X,
 } from 'lucide-react'
 import {
@@ -13,7 +13,7 @@ import {
 import './App.css'
 
 const repoUrl = 'https://github.com/Jesus-Rocha-B/Rupi'
-const commitsApi = 'https://api.github.com/repos/Jesus-Rocha-B/Rupi/commits?per_page=8'
+const commitsApiBase = 'https://api.github.com/repos/Jesus-Rocha-B/Rupi/commits'
 
 type Commit = { sha: string; message: string; author: string; date: string; url: string }
 type ModalState = { kind: 'meeting' | 'sprint' | 'advance'; storyId?: string } | null
@@ -31,8 +31,13 @@ const navItems: { id: ViewId; label: string; icon: typeof Activity }[] = [
   { id: 'sprints', label: 'Sprints', icon: Flag },
 ]
 
-async function fetchGithubCommits(): Promise<Commit[]> {
-  const response = await fetch(commitsApi, { headers: { Accept: 'application/vnd.github+json' } })
+function parseStoryNumber(id: string): number {
+  const match = id.match(/\d+/)
+  return match ? parseInt(match[0], 10) : 0
+}
+
+async function fetchGithubCommits(page = 1, perPage = 8): Promise<Commit[]> {
+  const response = await fetch(`${commitsApiBase}?page=${page}&per_page=${perPage}`, { headers: { Accept: 'application/vnd.github+json' } })
   if (!response.ok) throw new Error('No se pudo consultar GitHub')
   const payload = (await response.json()) as {
     sha: string
@@ -82,9 +87,16 @@ function App() {
   const [data, setData] = useState<ScrumData>(loadScrumData)
   const [modal, setModal] = useState<ModalState>(null)
   const [searchText, setSearchText] = useState('')
+  const [assigneeFilter, setAssigneeFilter] = useState<string>('all')
+  const [rangePreset, setRangePreset] = useState<string>('all')
+  const [customRangeStart, setCustomRangeStart] = useState<string>('1')
+  const [customRangeEnd, setCustomRangeEnd] = useState<string>('12')
   const [commits, setCommits] = useState<Commit[]>(fallbackCommits)
   const [commitState, setCommitState] = useState<'loading' | 'connected' | 'fallback'>('loading')
   const [refreshingCommits, setRefreshingCommits] = useState(false)
+  const [commitPage, setCommitPage] = useState(1)
+  const [hasMoreCommits, setHasMoreCommits] = useState(true)
+  const [loadingMoreCommits, setLoadingMoreCommits] = useState(false)
   const [mountedAt] = useState(() => Date.now())
   const [teamMember, setTeamMember] = useState<{ id: MemberId; name: string } | null>(null)
   const [accessCode, setAccessCode] = useState('')
@@ -202,22 +214,63 @@ function App() {
   async function loadCommits() {
     setRefreshingCommits(true)
     try {
-      setCommits(await fetchGithubCommits())
+      const initial = await fetchGithubCommits(1, 8)
+      setCommits(initial)
+      setCommitPage(1)
+      setHasMoreCommits(initial.length === 8)
       setCommitState('connected')
     } catch {
       setCommits(fallbackCommits)
+      setCommitPage(1)
+      setHasMoreCommits(false)
       setCommitState('fallback')
     } finally {
       setRefreshingCommits(false)
     }
   }
 
+  async function loadMoreCommits() {
+    if (loadingMoreCommits || !hasMoreCommits) return
+    setLoadingMoreCommits(true)
+    try {
+      const nextPage = commitPage + 1
+      const nextBatch = await fetchGithubCommits(nextPage, 8)
+      if (nextBatch.length === 0) {
+        setHasMoreCommits(false)
+      } else {
+        setCommits((prev) => {
+          const existingShas = new Set(prev.map((c) => c.sha))
+          const uniqueNext = nextBatch.filter((c) => !existingShas.has(c.sha))
+          return [...prev, ...uniqueNext]
+        })
+        setCommitPage(nextPage)
+        if (nextBatch.length < 8) {
+          setHasMoreCommits(false)
+        }
+      }
+    } catch {
+      setHasMoreCommits(false)
+    } finally {
+      setLoadingMoreCommits(false)
+    }
+  }
+
   useEffect(() => {
     let active = true
-    void fetchGithubCommits().then((items) => {
-      if (active) { setCommits(items); setCommitState('connected') }
+    void fetchGithubCommits(1, 8).then((items) => {
+      if (active) {
+        setCommits(items)
+        setCommitPage(1)
+        setHasMoreCommits(items.length === 8)
+        setCommitState('connected')
+      }
     }).catch(() => {
-      if (active) { setCommits(fallbackCommits); setCommitState('fallback') }
+      if (active) {
+        setCommits(fallbackCommits)
+        setCommitPage(1)
+        setHasMoreCommits(false)
+        setCommitState('fallback')
+      }
     })
     return () => { active = false }
   }, [])
@@ -231,9 +284,42 @@ function App() {
     .filter((meeting) => !meeting.completed && new Date(meeting.startsAt).getTime() >= mountedAt)
     .sort((a, b) => a.startsAt.localeCompare(b.startsAt)), [data.meetings, mountedAt])
 
-  const filteredStories = useMemo(() => data.stories.filter((story) =>
-    `${story.id} ${story.title} ${story.epic}`.toLowerCase().includes(searchText.toLowerCase()),
-  ), [data.stories, searchText])
+  const filteredStories = useMemo(() => {
+    let rangeStart = 1
+    let rangeEnd = Infinity
+
+    if (rangePreset === 'custom') {
+      rangeStart = Math.max(1, parseInt(customRangeStart, 10) || 1)
+      rangeEnd = Math.max(rangeStart, parseInt(customRangeEnd, 10) || 60)
+    } else if (rangePreset !== 'all') {
+      const [startStr, endStr] = rangePreset.split('-')
+      rangeStart = parseInt(startStr, 10) || 1
+      rangeEnd = parseInt(endStr, 10) || Infinity
+    }
+
+    return data.stories.filter((story) => {
+      // 1. Búsqueda por texto (id, título o épica)
+      const matchesSearch = `${story.id} ${story.title} ${story.epic}`
+        .toLowerCase()
+        .includes(searchText.toLowerCase())
+      if (!matchesSearch) return false
+
+      // 2. Filtro por responsable
+      if (assigneeFilter === 'unassigned') {
+        if (story.assignee !== null) return false
+      } else if (assigneeFilter !== 'all') {
+        if (story.assignee !== assigneeFilter) return false
+      }
+
+      // 3. Filtro por rango de historias (HU-xx)
+      const storyNum = parseStoryNumber(story.id)
+      if (storyNum > 0 && (storyNum < rangeStart || storyNum > rangeEnd)) {
+        return false
+      }
+
+      return true
+    })
+  }, [data.stories, searchText, assigneeFilter, rangePreset, customRangeStart, customRangeEnd])
 
   function addMeeting(meeting: ScrumMeeting) {
     setData((current) => ({ ...current, meetings: [...current.meetings, meeting] }))
@@ -353,8 +439,17 @@ function App() {
           />}
           {view === 'historias' && <StoriesPage
             stories={filteredStories}
+            totalStoriesCount={data.stories.length}
             query={searchText}
             onQuery={setSearchText}
+            assigneeFilter={assigneeFilter}
+            onAssigneeFilter={setAssigneeFilter}
+            rangePreset={rangePreset}
+            onRangePreset={setRangePreset}
+            customRangeStart={customRangeStart}
+            onCustomRangeStart={setCustomRangeStart}
+            customRangeEnd={customRangeEnd}
+            onCustomRangeEnd={setCustomRangeEnd}
             onChange={changeStory}
             onAddTask={addStoryTask}
             onToggleTask={toggleStoryTask}
@@ -362,7 +457,7 @@ function App() {
             onAddUpdate={(storyId) => setModal({ kind: 'advance', storyId })}
           />}
           {view === 'reuniones' && <MeetingsPage meetings={data.meetings} onCreate={() => setModal({ kind: 'meeting' })} onToggle={toggleMeeting} />}
-          {view === 'commits' && <CommitsPage commits={commits} state={commitState} loading={refreshingCommits} onRefresh={() => void loadCommits()} />}
+          {view === 'commits' && <CommitsPage commits={commits} state={commitState} loading={refreshingCommits} loadingMore={loadingMoreCommits} hasMore={hasMoreCommits} onRefresh={() => void loadCommits()} onLoadMore={() => void loadMoreCommits()} />}
           {view === 'sprints' && <SprintsPage sprints={data.sprints} stories={data.stories} activeSprint={activeSprint} onCreate={() => setModal({ kind: 'sprint' })} onFinish={finishSprint} />}
         </div>
       </main>
@@ -495,10 +590,37 @@ function EmptyInline({ title, copy, action }: { title: string; copy: string; act
   return <div className="empty-inline"><span className="empty-symbol"><CalendarDays size={19} /></span><b>{title}</b><p>{copy}</p>{action}</div>
 }
 
-function StoriesPage({ stories, query, onQuery, onChange, onAddTask, onToggleTask, onRemoveTask, onAddUpdate }: {
+function StoriesPage({
+  stories,
+  totalStoriesCount,
+  query,
+  onQuery,
+  assigneeFilter,
+  onAssigneeFilter,
+  rangePreset,
+  onRangePreset,
+  customRangeStart,
+  onCustomRangeStart,
+  customRangeEnd,
+  onCustomRangeEnd,
+  onChange,
+  onAddTask,
+  onToggleTask,
+  onRemoveTask,
+  onAddUpdate,
+}: {
   stories: UserStory[]
+  totalStoriesCount: number
   query: string
   onQuery: (value: string) => void
+  assigneeFilter: string
+  onAssigneeFilter: (value: string) => void
+  rangePreset: string
+  onRangePreset: (value: string) => void
+  customRangeStart: string
+  onCustomRangeStart: (value: string) => void
+  customRangeEnd: string
+  onCustomRangeEnd: (value: string) => void
   onChange: (id: string, changes: Partial<UserStory>) => void
   onAddTask: (storyId: string, title: string) => void
   onToggleTask: (storyId: string, taskId: string) => void
@@ -506,8 +628,121 @@ function StoriesPage({ stories, query, onQuery, onChange, onAddTask, onToggleTas
   onAddUpdate: (id: string) => void
 }) {
   const columns = storyStatuses.map((status) => ({ status, stories: stories.filter((story) => story.status === status) }))
+
   return <>
-    <section className="page-toolbar"><label className="search-box"><Search size={17} /><input value={query} onChange={(event) => onQuery(event.target.value)} placeholder="Buscar historia o épica" /></label><div className="toolbar-hint"><span className="state-dot" />{stories.length} historias en el backlog</div></section>
+    <section className="page-toolbar">
+      <div className="toolbar-filters">
+        <label className="search-box">
+          <Search size={17} />
+          <input value={query} onChange={(event) => onQuery(event.target.value)} placeholder="Buscar historia o épica…" />
+        </label>
+
+        {/* Filtro 1: Responsable */}
+        <div className="filter-select-wrapper">
+          <Users size={15} />
+          <select
+            value={assigneeFilter}
+            onChange={(event) => onAssigneeFilter(event.target.value)}
+            aria-label="Filtrar por responsable"
+          >
+            <option value="all">Todos los responsables</option>
+            {members.map((member) => (
+              <option key={member.id} value={member.id}>{member.name}</option>
+            ))}
+            <option value="unassigned">Sin asignar</option>
+          </select>
+        </div>
+
+        {/* Filtro 2: Rango de historias de usuario */}
+        <div className="range-filter-wrapper">
+          <ListFilter size={15} />
+          <select
+            value={rangePreset}
+            onChange={(event) => onRangePreset(event.target.value)}
+            aria-label="Filtrar por rango de historias"
+          >
+            <option value="all">Todas las historias (HU-01 a HU-60)</option>
+            <option value="1-12">HU-01 a HU-12</option>
+            <option value="13-24">HU-13 a HU-24</option>
+            <option value="25-36">HU-25 a HU-36</option>
+            <option value="37-48">HU-37 a HU-48</option>
+            <option value="49-60">HU-49 a HU-60</option>
+            <option value="custom">Rango personalizado…</option>
+          </select>
+
+          {rangePreset === 'custom' && (
+            <div className="custom-range-inputs">
+              <span>De HU-</span>
+              <input
+                type="number"
+                min="1"
+                max="60"
+                placeholder="1"
+                value={customRangeStart}
+                onChange={(event) => onCustomRangeStart(event.target.value)}
+                aria-label="Número inicial de historia"
+              />
+              <span>a HU-</span>
+              <input
+                type="number"
+                min="1"
+                max="60"
+                placeholder="12"
+                value={customRangeEnd}
+                onChange={(event) => onCustomRangeEnd(event.target.value)}
+                aria-label="Número final de historia"
+              />
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="toolbar-hint">
+        <span className="state-dot" />
+        {stories.length === totalStoriesCount
+          ? `${stories.length} historias en el backlog`
+          : `${stories.length} de ${totalStoriesCount} historias`}
+      </div>
+    </section>
+
+    {/* Leyenda explicativa con colores de responsables */}
+    <section className="members-legend" aria-label="Leyenda de responsables">
+      <span className="legend-label">Leyenda de responsables:</span>
+      <div className="legend-items">
+        <button
+          type="button"
+          className={`legend-pill ${assigneeFilter === 'all' ? 'is-active' : ''}`}
+          onClick={() => onAssigneeFilter('all')}
+          title="Ver historias de todos"
+        >
+          <span className="legend-swatch swatch-all" />
+          <span>Todos</span>
+        </button>
+        {members.map((member) => (
+          <button
+            type="button"
+            key={member.id}
+            className={`legend-pill ${assigneeFilter === member.id ? 'is-active' : ''}`}
+            onClick={() => onAssigneeFilter(assigneeFilter === member.id ? 'all' : member.id)}
+            title={`Filtrar por ${member.name}`}
+          >
+            <span className={`legend-swatch ${member.color}`} />
+            <span className="legend-member-initials">{member.initials}</span>
+            <span>{member.name}</span>
+          </button>
+        ))}
+        <button
+          type="button"
+          className={`legend-pill ${assigneeFilter === 'unassigned' ? 'is-active' : ''}`}
+          onClick={() => onAssigneeFilter(assigneeFilter === 'unassigned' ? 'all' : 'unassigned')}
+          title="Ver historias sin asignar"
+        >
+          <span className="legend-swatch unassigned" />
+          <span>Sin asignar</span>
+        </button>
+      </div>
+    </section>
+
     <div className="stories-board">{columns.map(({ status, stories: items }) => <section className="story-column" key={status}>
       <div className="column-heading"><span className={`column-dot ${status.toLowerCase().replace(' ', '-')}`} /><b>{displayStatus(status)}</b><span>{items.length}</span></div>
       <div className="column-cards">{items.length ? items.map((story) => <StoryCard key={story.id} story={story} onChange={onChange} onAddTask={onAddTask} onToggleTask={onToggleTask} onRemoveTask={onRemoveTask} onAddUpdate={onAddUpdate} />) : <div className="column-empty">No hay historias aquí</div>}</div>
@@ -518,6 +753,9 @@ function StoriesPage({ stories, query, onQuery, onChange, onAddTask, onToggleTas
 
 function StoryCard({ story, onChange, onAddTask, onToggleTask, onRemoveTask, onAddUpdate }: { story: UserStory; onChange: (id: string, changes: Partial<UserStory>) => void; onAddTask: (storyId: string, title: string) => void; onToggleTask: (storyId: string, taskId: string) => void; onRemoveTask: (storyId: string, taskId: string) => void; onAddUpdate: (id: string) => void }) {
   const completedTasks = story.tasks.filter((task) => task.completed).length
+  const member = story.assignee ? initialsName(story.assignee) : null
+  const assigneeColorClass = member ? `assignee-${member.color}` : 'assignee-unassigned'
+
   function submitTask(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const form = new FormData(event.currentTarget)
@@ -527,20 +765,61 @@ function StoryCard({ story, onChange, onAddTask, onToggleTask, onRemoveTask, onA
     event.currentTarget.reset()
   }
 
-  return <article className="story-card"><div className="story-card-top"><span className={`story-id priority-${priorityClass(story.priority)}`}>{story.id}</span><span className={`priority-tag priority-${priorityClass(story.priority)}`}>{story.priority === 'Sin definir' ? 'Sin prioridad' : story.priority}</span></div><h3>{story.title}</h3><details className="story-full"><summary>Ver descripción</summary><p>{story.description}</p></details><span className="epic-tag">{story.epic}</span><div className="story-card-progress"><div><span>Avance registrado</span><b>{story.progress}%</b></div><div className="progress-track"><span style={{ width: `${story.progress}%` }} /></div></div>
-    <div className="story-card-controls"><label><span>Responsable</span><select value={story.assignee ?? ''} onChange={(event) => onChange(story.id, { assignee: (event.target.value || null) as MemberId | null })}><option value="">Sin asignar</option>{members.map((member) => <option key={member.id} value={member.id}>{member.name}</option>)}</select></label><label><span>Estado</span><select value={story.status} onChange={(event) => { const status = event.target.value as StoryStatus; onChange(story.id, { status, progress: status === 'Pendiente' ? 0 : status === 'Hecha' ? 100 : status === 'En revisión' ? Math.max(story.progress, 75) : Math.max(story.progress, 25) }) }}>{storyStatuses.map((status) => <option key={status} value={status}>{displayStatus(status)}</option>)}</select></label></div>
-    <details className="story-tasks">
-      <summary><ListTodo size={14} /><span>Tareas</span><b>{completedTasks}/{story.tasks.length}</b></summary>
-      <div className="story-task-content">
-        {story.tasks.length ? <ul>{story.tasks.map((task) => <li key={task.id} className={task.completed ? 'task-complete' : ''}>
-          <label><input type="checkbox" checked={task.completed} onChange={() => onToggleTask(story.id, task.id)} /><span>{task.title}</span></label>
-          <button type="button" aria-label={`Eliminar tarea: ${task.title}`} title="Eliminar tarea" onClick={() => onRemoveTask(story.id, task.id)}><X size={13} /></button>
-        </li>)}</ul> : <p>Divide esta historia en pasos concretos.</p>}
-        <form onSubmit={submitTask}><input name="task" aria-label={`Nueva tarea para ${story.id}`} placeholder="Añadir una tarea" maxLength={100} /><button type="submit" aria-label="Añadir tarea"><Plus size={15} /></button></form>
+  return (
+    <article className={`story-card ${assigneeColorClass}`}>
+      <div className="story-card-top">
+        <div className="story-card-id-group">
+          <span className={`story-id priority-${priorityClass(story.priority)}`}>{story.id}</span>
+          <span className={`story-assignee-badge ${member ? member.color : 'unassigned'}`}>
+            <span className="assignee-badge-dot" />
+            {member ? member.name : 'Sin asignar'}
+          </span>
+        </div>
+        <span className={`priority-tag priority-${priorityClass(story.priority)}`}>
+          {story.priority === 'Sin definir' ? 'Sin prioridad' : story.priority}
+        </span>
       </div>
-    </details>
-    <button className="update-button" type="button" onClick={() => onAddUpdate(story.id)}><Activity size={14} /> Registrar avance</button>
-  </article>
+      <h3>{story.title}</h3>
+      <details className="story-full"><summary>Ver descripción</summary><p>{story.description}</p></details>
+      <span className="epic-tag">{story.epic}</span>
+      <div className="story-card-progress">
+        <div><span>Avance registrado</span><b>{story.progress}%</b></div>
+        <div className="progress-track"><span style={{ width: `${story.progress}%` }} /></div>
+      </div>
+      <div className="story-card-controls">
+        <label>
+          <span>Responsable</span>
+          <div className="select-with-avatar">
+            {story.assignee ? <Avatar memberId={story.assignee} small /> : <span className="avatar avatar-small unassigned">?</span>}
+            <select
+              value={story.assignee ?? ''}
+              onChange={(event) => onChange(story.id, { assignee: (event.target.value || null) as MemberId | null })}
+            >
+              <option value="">Sin asignar</option>
+              {members.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+            </select>
+          </div>
+        </label>
+        <label>
+          <span>Estado</span>
+          <select value={story.status} onChange={(event) => { const status = event.target.value as StoryStatus; onChange(story.id, { status, progress: status === 'Pendiente' ? 0 : status === 'Hecha' ? 100 : status === 'En revisión' ? Math.max(story.progress, 75) : Math.max(story.progress, 25) }) }}>
+            {storyStatuses.map((status) => <option key={status} value={status}>{displayStatus(status)}</option>)}
+          </select>
+        </label>
+      </div>
+      <details className="story-tasks">
+        <summary><ListTodo size={14} /><span>Tareas</span><b>{completedTasks}/{story.tasks.length}</b></summary>
+        <div className="story-task-content">
+          {story.tasks.length ? <ul>{story.tasks.map((task) => <li key={task.id} className={task.completed ? 'task-complete' : ''}>
+            <label><input type="checkbox" checked={task.completed} onChange={() => onToggleTask(story.id, task.id)} /><span>{task.title}</span></label>
+            <button type="button" aria-label={`Eliminar tarea: ${task.title}`} title="Eliminar tarea" onClick={() => onRemoveTask(story.id, task.id)}><X size={13} /></button>
+          </li>)}</ul> : <p>Divide esta historia en pasos concretos.</p>}
+          <form onSubmit={submitTask}><input name="task" aria-label={`Nueva tarea para ${story.id}`} placeholder="Añadir una tarea" maxLength={100} /><button type="submit" aria-label="Añadir tarea"><Plus size={15} /></button></form>
+        </div>
+      </details>
+      <button className="update-button" type="button" onClick={() => onAddUpdate(story.id)}><Activity size={14} /> Registrar avance</button>
+    </article>
+  )
 }
 
 function MeetingsPage({ meetings, onCreate, onToggle }: { meetings: ScrumMeeting[]; onCreate: () => void; onToggle: (id: string) => void }) {
@@ -550,10 +829,78 @@ function MeetingsPage({ meetings, onCreate, onToggle }: { meetings: ScrumMeeting
   </section>
 }
 
-function CommitsPage({ commits, state, loading, onRefresh }: { commits: Commit[]; state: string; loading: boolean; onRefresh: () => void }) {
+function CommitsPage({
+  commits,
+  state,
+  loading,
+  loadingMore,
+  hasMore,
+  onRefresh,
+  onLoadMore,
+}: {
+  commits: Commit[]
+  state: string
+  loading: boolean
+  loadingMore: boolean
+  hasMore: boolean
+  onRefresh: () => void
+  onLoadMore: () => void
+}) {
   return <>
-    <section className="repo-banner"><div className="repo-avatar"><FolderGit2 size={23} /></div><div><span className="eyebrow">REPOSITORIO</span><h2>Jesus-Rocha-B / Rupi</h2><a href={repoUrl} target="_blank" rel="noreferrer">github.com/Jesus-Rocha-B/Rupi <ExternalLink size={13} /></a></div><button className="icon-button refresh-button" type="button" aria-label="Actualizar commits" onClick={onRefresh} disabled={loading}><RotateCw size={16} className={loading ? 'spinning' : ''} /></button></section>
-    <section className="panel full-panel commit-history-panel"><div className="section-toolbar"><PanelHeading icon={<GitCommitHorizontal size={17} />} eyebrow="RAMA PRINCIPAL · MAIN" title="Historial reciente" /><span className="subtle-label">{commits.length} COMMITS</span></div><div className="commit-timeline">{commits.map((commit) => <CommitRow key={commit.sha} commit={commit} />)}</div><div className="github-footnote"><Code2 size={15} />{state === 'connected' ? 'Datos consultados directamente desde la API pública de GitHub.' : 'No se pudo consultar GitHub; se muestran los últimos commits conocidos del proyecto.'}<a href={`${repoUrl}/commits/main`} target="_blank" rel="noreferrer">Abrir en GitHub <ArrowRight size={14} /></a></div></section>
+    <section className="repo-banner">
+      <div className="repo-avatar"><FolderGit2 size={23} /></div>
+      <div>
+        <span className="eyebrow">REPOSITORIO</span>
+        <h2>Jesus-Rocha-B / Rupi</h2>
+        <a href={repoUrl} target="_blank" rel="noreferrer">github.com/Jesus-Rocha-B/Rupi <ExternalLink size={13} /></a>
+      </div>
+      <button className="icon-button refresh-button" type="button" aria-label="Actualizar commits" onClick={onRefresh} disabled={loading}>
+        <RotateCw size={16} className={loading ? 'spinning' : ''} />
+      </button>
+    </section>
+    <section className="panel full-panel commit-history-panel">
+      <div className="section-toolbar">
+        <PanelHeading icon={<GitCommitHorizontal size={17} />} eyebrow="RAMA PRINCIPAL · MAIN" title="Historial de commits" />
+        <span className="subtle-label">{commits.length} COMMITS CARGADOS</span>
+      </div>
+      <div className="commit-timeline">
+        {commits.map((commit) => <CommitRow key={commit.sha} commit={commit} />)}
+      </div>
+
+      <div className="commits-footer-actions">
+        {hasMore ? (
+          <button
+            className="button button-outline load-more-commits-button"
+            type="button"
+            onClick={onLoadMore}
+            disabled={loadingMore}
+          >
+            {loadingMore ? (
+              <>
+                <RotateCw size={15} className="spinning" />
+                <span>Cargando más commits…</span>
+              </>
+            ) : (
+              <>
+                <Plus size={15} />
+                <span>Ver más commits</span>
+              </>
+            )}
+          </button>
+        ) : (
+          <div className="commits-end-note">
+            <CheckCircle2 size={15} />
+            <span>Has visualizado todos los commits disponibles en el repositorio.</span>
+          </div>
+        )}
+      </div>
+
+      <div className="github-footnote">
+        <Code2 size={15} />
+        {state === 'connected' ? 'Datos consultados directamente desde la API pública de GitHub.' : 'No se pudo consultar GitHub; se muestran los últimos commits conocidos del proyecto.'}
+        <a href={`${repoUrl}/commits/main`} target="_blank" rel="noreferrer">Abrir en GitHub <ArrowRight size={14} /></a>
+      </div>
+    </section>
   </>
 }
 
@@ -561,14 +908,87 @@ function CommitRow({ commit, compact = false }: { commit: Commit; compact?: bool
   return <article className={`commit-row ${compact ? 'compact' : ''}`}><span className="commit-line-icon"><GitCommitHorizontal size={16} /></span><div className="commit-main"><a href={commit.url} target="_blank" rel="noreferrer" className="commit-message">{commit.message}</a><div className="commit-meta"><span className="commit-author-avatar">{commit.author.split(' ').map((part) => part[0]).slice(0, 2).join('')}</span><b>{commit.author}</b><span>·</span><time>{formatDate(commit.date, { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</time></div></div><a className="commit-sha" href={commit.url} target="_blank" rel="noreferrer">{commit.sha}<ExternalLink size={12} /></a></article>
 }
 
+function CompletedStoryItem({ story }: { story: UserStory }) {
+  const member = story.assignee ? initialsName(story.assignee) : null
+  const completedTasks = story.tasks.filter((t) => t.completed).length
+
+  return (
+    <div className={`completed-story-item assignee-${member ? member.color : 'unassigned'}`}>
+      <div className="completed-story-top">
+        <span className={`story-id priority-${priorityClass(story.priority)}`}>{story.id}</span>
+        <span className={`status-pill status-${story.status.toLowerCase().replace(' ', '-')}`}>
+          <span />{displayStatus(story.status)}
+        </span>
+      </div>
+      <b className="completed-story-title">{story.title}</b>
+      <span className="epic-tag">{story.epic}</span>
+      <div className="completed-story-footer">
+        <div className="completed-story-assignee">
+          {story.assignee ? (
+            <>
+              <Avatar memberId={story.assignee} small />
+              <span>{member?.name}</span>
+            </>
+          ) : (
+            <>
+              <span className="avatar avatar-small unassigned">?</span>
+              <span className="unassigned-text">Sin asignar</span>
+            </>
+          )}
+        </div>
+        <div className="completed-story-tasks-count">
+          <ListTodo size={12} />
+          <span>{completedTasks}/{story.tasks.length} tareas</span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function SprintsPage({ sprints, stories, activeSprint, onCreate, onFinish }: { sprints: Sprint[]; stories: UserStory[]; activeSprint?: Sprint; onCreate: () => void; onFinish: (id: string) => void }) {
   const pastSprints = sprints.filter((sprint) => sprint.completed)
   const futureSprints = sprints.filter((sprint) => !sprint.completed && sprint.id !== activeSprint?.id)
+
   return <>
     {!sprints.length && <section className="sprint-empty-page"><div className="sprint-empty-art"><div className="empty-flag"><Flag size={38} /></div><span className="orbit-dot dot-one" /><span className="orbit-dot dot-two" /><span className="orbit-dot dot-three" /></div><span className="eyebrow">PRIMER CICLO DE TRABAJO</span><h2>Cuando estén listos,<br />comienza el primer sprint.</h2><p>Definan un objetivo, el tiempo que tienen y las historias que pueden completar. El backlog seguirá disponible para el resto del trabajo.</p><button className="button button-primary" type="button" onClick={onCreate}><Plus size={17} />Crear un sprint</button><div className="sprint-empty-note"><CheckCircle2 size={15} />Todavía no hay sprints registrados</div></section>}
     {activeSprint && <section className="panel full-panel sprint-detail-panel"><div className="section-toolbar"><PanelHeading icon={<Flag size={17} />} eyebrow="SPRINT ACTIVO" title={activeSprint.name} /><button className="button button-outline button-small" type="button" onClick={() => onFinish(activeSprint.id)}><CheckCircle2 size={15} />Finalizar sprint</button></div><p className="sprint-goal">{activeSprint.goal}</p><div className="sprint-date-strip"><span><CalendarDays size={16} />{activeSprint.startsOn} — {activeSprint.endsOn}</span><span><ListChecks size={16} />{activeSprint.storyIds.length} historias</span></div><div className="sprint-story-list">{stories.filter((story) => activeSprint.storyIds.includes(story.id)).map((story) => <StoryPreview key={story.id} story={story} />)}</div></section>}
     {futureSprints.length > 0 && <section className="panel full-panel sprint-detail-panel"><PanelHeading icon={<CalendarDays size={17} />} eyebrow="PRÓXIMOS CICLOS" title="Sprints planificados" />{futureSprints.map((sprint) => <div className="planned-sprint-row" key={sprint.id}><div><b>{sprint.name}</b><p>{sprint.goal}</p></div><span>{sprint.startsOn} — {sprint.endsOn}</span></div>)}</section>}
-    {pastSprints.length > 0 && <section className="panel full-panel sprint-detail-panel"><PanelHeading icon={<CheckCircle2 size={17} />} eyebrow="TRABAJO COMPLETADO" title="Sprints anteriores" />{pastSprints.map((sprint) => <div className="planned-sprint-row" key={sprint.id}><div><b>{sprint.name}</b><p>{sprint.goal}</p></div><span>{sprint.startsOn} — {sprint.endsOn}</span></div>)}</section>}
+    {pastSprints.length > 0 && <section className="panel full-panel sprint-detail-panel past-sprints-panel">
+      <PanelHeading icon={<CheckCircle2 size={17} />} eyebrow="TRABAJO COMPLETADO" title="Sprints anteriores" />
+      <div className="past-sprints-list">
+        {pastSprints.map((sprint) => {
+          const sprintStories = stories.filter((story) => sprint.storyIds.includes(story.id))
+          const doneCount = sprintStories.filter((s) => s.status === 'Hecha').length
+          return (
+            <article className="completed-sprint-card" key={sprint.id}>
+              <div className="completed-sprint-header">
+                <div>
+                  <div className="completed-sprint-title-row">
+                    <h3>{sprint.name}</h3>
+                    <span className="status-pill status-done"><CheckCircle2 size={12} />Finalizado</span>
+                  </div>
+                  <p className="completed-sprint-goal">{sprint.goal}</p>
+                </div>
+                <div className="completed-sprint-stats">
+                  <span><CalendarDays size={14} />{sprint.startsOn} — {sprint.endsOn}</span>
+                  <span><ListChecks size={14} />{doneCount}/{sprintStories.length} historias hechas</span>
+                </div>
+              </div>
+              <div className="completed-sprint-body">
+                <span className="completed-stories-kicker">Historias trabajadas en este ciclo ({sprintStories.length}):</span>
+                {sprintStories.length > 0 ? (
+                  <div className="completed-stories-grid">
+                    {sprintStories.map((story) => <CompletedStoryItem key={story.id} story={story} />)}
+                  </div>
+                ) : (
+                  <p className="no-sprint-stories">No se asociaron historias a este sprint.</p>
+                )}
+              </div>
+            </article>
+          )
+        })}
+      </div>
+    </section>}
     {sprints.length > 0 && <div className="sprint-add-row"><span>El equipo puede planificar más de un ciclo.</span><button className="button button-outline" type="button" onClick={onCreate}><Plus size={16} />Planificar otro sprint</button></div>}
   </>
 }
