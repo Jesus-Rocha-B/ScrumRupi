@@ -353,6 +353,25 @@
 .commits-end-note svg { color: #5e9a6c; }
 .spinning { animation: spin 1s linear infinite; }
 
+.commits-toolbar { align-items: center; flex-wrap: wrap; gap: 12px; }
+.commit-toolbar-controls { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.commit-date-filter-pill { display: inline-flex; align-items: center; gap: 7px; height: 38px; padding: 0 11px; border: 1px solid #e8e7e0; border-radius: 9px; background: #fff; color: #66756b; font-size: 10px; transition: all .15s ease; }
+.commit-date-filter-pill:hover,
+.commit-date-filter-pill.has-value { border-color: #cbd2c7; box-shadow: 0 2px 6px #1b2e210a; }
+.commit-date-filter-pill.has-value { border-color: #9cbca4; background: #f8faf7; }
+.commit-date-icon { color: #6f8075; flex-shrink: 0; }
+.commit-date-label { font: 700 9px var(--display-font); color: #495a4f; text-transform: uppercase; letter-spacing: .3px; }
+.commit-date-input { border: 1px solid #ded9ce; border-radius: 6px; background: #fdfdfb; color: #36483c; font: 600 10px var(--display-font); padding: 4px 7px; outline: none; cursor: pointer; transition: border-color .15s ease; }
+.commit-date-input:focus { border-color: #619369; background: #fff; }
+.commit-date-clear-btn { display: grid; place-items: center; width: 19px; height: 19px; padding: 0; margin-left: 2px; border: 0; border-radius: 50%; background: #eeebe3; color: #6f7a71; cursor: pointer; transition: all .15s ease; }
+.commit-date-clear-btn:hover { background: #fae2dd; color: #ad422c; }
+
+.commit-empty-filter { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 36px 18px; margin: 12px 0 16px; border: 1px dashed #dcd8cd; border-radius: 12px; background: #faf9f6; color: #76827a; }
+.commit-empty-filter svg { color: #9ab09f; margin-bottom: 10px; }
+.commit-empty-filter p { margin: 0 0 14px; color: #536459; font-size: 11px; max-width: 420px; line-height: 1.55; }
+.commit-empty-filter p b { color: #2e4135; font-weight: 700; }
+.commit-empty-filter-actions { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; justify-content: center; }
+
 .past-sprints-panel { margin-top: 18px; }
 .past-sprints-list { display: grid; gap: 16px; margin-top: 14px; }
 .completed-sprint-card { padding: 16px 18px; border: 1px solid #ebe8df; border-radius: 12px; background: #faf9f5; box-shadow: 0 2px 8px #31442d06; }
@@ -524,6 +543,9 @@
   .section-toolbar>.button { min-height: 33px; padding: 0 9px; font-size: 8px; }
   .section-toolbar .panel-heading-icon { width: 29px; height: 29px; flex-basis: 29px; }
   .section-toolbar .panel-heading h2 { font-size: 11px; }
+  .commit-toolbar-controls { width: 100%; justify-content: space-between; gap: 8px; margin-top: 6px; }
+  .commit-date-filter-pill { height: 34px; padding: 0 9px; font-size: 8.5px; }
+  .commit-date-input { font-size: 9px; padding: 2px 5px; }
   .commit-row { gap: 7px; }
   .commit-line-icon { width: 25px; height: 25px; flex-basis: 25px; }
   .commit-timeline .commit-message { font-size: 9px; }

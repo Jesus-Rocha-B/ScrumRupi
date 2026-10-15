@@ -91,6 +91,7 @@ function App() {
   const [rangeStart, setRangeStart] = useState<string>('')
   const [rangeEnd, setRangeEnd] = useState<string>('')
   const [commits, setCommits] = useState<Commit[]>(fallbackCommits)
+  const [commitDateFilter, setCommitDateFilter] = useState('')
   const [commitState, setCommitState] = useState<'loading' | 'connected' | 'fallback'>('loading')
   const [refreshingCommits, setRefreshingCommits] = useState(false)
   const [commitPage, setCommitPage] = useState(1)
@@ -446,7 +447,7 @@ function App() {
             onAddUpdate={(storyId) => setModal({ kind: 'advance', storyId })}
           />}
           {view === 'reuniones' && <MeetingsPage meetings={data.meetings} onCreate={() => setModal({ kind: 'meeting' })} onToggle={toggleMeeting} />}
-          {view === 'commits' && <CommitsPage commits={commits} state={commitState} loading={refreshingCommits} loadingMore={loadingMoreCommits} hasMore={hasMoreCommits} onRefresh={() => void loadCommits()} onLoadMore={() => void loadMoreCommits()} />}
+          {view === 'commits' && <CommitsPage commits={commits} dateFilter={commitDateFilter} onDateFilter={setCommitDateFilter} state={commitState} loading={refreshingCommits} loadingMore={loadingMoreCommits} hasMore={hasMoreCommits} onRefresh={() => void loadCommits()} onLoadMore={() => void loadMoreCommits()} />}
           {view === 'sprints' && <SprintsPage sprints={data.sprints} stories={data.stories} activeSprint={activeSprint} onCreate={() => setModal({ kind: 'sprint' })} onFinish={finishSprint} />}
         </div>
       </main>
@@ -1060,6 +1061,8 @@ function MeetingsPage({ meetings, onCreate, onToggle }: { meetings: ScrumMeeting
 
 function CommitsPage({
   commits,
+  dateFilter,
+  onDateFilter,
   state,
   loading,
   loadingMore,
@@ -1068,6 +1071,8 @@ function CommitsPage({
   onLoadMore,
 }: {
   commits: Commit[]
+  dateFilter: string
+  onDateFilter: (date: string) => void
   state: string
   loading: boolean
   loadingMore: boolean
@@ -1075,6 +1080,18 @@ function CommitsPage({
   onRefresh: () => void
   onLoadMore: () => void
 }) {
+  const filteredCommits = useMemo(() => {
+    if (!dateFilter) return commits
+    return commits.filter((c) => {
+      try {
+        const commitDay = new Date(c.date).toLocaleDateString('en-CA', { timeZone: 'America/Lima' })
+        return commitDay === dateFilter
+      } catch {
+        return false
+      }
+    })
+  }, [commits, dateFilter])
+
   return <>
     <section className="repo-banner">
       <div className="repo-avatar"><FolderGit2 size={23} /></div>
@@ -1088,41 +1105,101 @@ function CommitsPage({
       </button>
     </section>
     <section className="panel full-panel commit-history-panel">
-      <div className="section-toolbar">
+      <div className="section-toolbar commits-toolbar">
         <PanelHeading icon={<GitCommitHorizontal size={17} />} eyebrow="RAMA PRINCIPAL · MAIN" title="Historial de commits" />
-        <span className="subtle-label">{commits.length} COMMITS CARGADOS</span>
-      </div>
-      <div className="commit-timeline">
-        {commits.map((commit) => <CommitRow key={commit.sha} commit={commit} />)}
+        <div className="commit-toolbar-controls">
+          <div className={`commit-date-filter-pill ${dateFilter ? 'has-value' : ''}`}>
+            <CalendarDays size={14} className="commit-date-icon" />
+            <span className="commit-date-label">Fecha:</span>
+            <input
+              type="date"
+              className="commit-date-input"
+              value={dateFilter}
+              onChange={(e) => onDateFilter(e.target.value)}
+              aria-label="Filtrar commits por fecha"
+            />
+            {dateFilter && (
+              <button
+                type="button"
+                className="commit-date-clear-btn"
+                onClick={() => onDateFilter('')}
+                title="Limpiar filtro de fecha"
+                aria-label="Limpiar filtro de fecha"
+              >
+                <X size={12} />
+              </button>
+            )}
+          </div>
+          <span className="subtle-label">
+            {dateFilter
+              ? `${filteredCommits.length} de ${commits.length} COMMITS`
+              : `${commits.length} COMMITS CARGADOS`}
+          </span>
+        </div>
       </div>
 
-      <div className="commits-footer-actions">
-        {hasMore ? (
-          <button
-            className="button button-outline load-more-commits-button"
-            type="button"
-            onClick={onLoadMore}
-            disabled={loadingMore}
-          >
-            {loadingMore ? (
-              <>
-                <RotateCw size={15} className="spinning" />
-                <span>Cargando más commits…</span>
-              </>
-            ) : (
-              <>
-                <Plus size={15} />
-                <span>Ver más commits</span>
-              </>
+      {filteredCommits.length > 0 ? (
+        <div className="commit-timeline">
+          {filteredCommits.map((commit) => <CommitRow key={commit.sha} commit={commit} />)}
+        </div>
+      ) : (
+        <div className="commit-empty-filter">
+          <CalendarDays size={30} />
+          <p>
+            No se encontraron commits registrados para la fecha{' '}
+            <b>{formatDate(dateFilter + 'T12:00:00', { day: 'numeric', month: 'long', year: 'numeric' })}</b>.
+          </p>
+          <div className="commit-empty-filter-actions">
+            <button
+              type="button"
+              className="button button-outline button-small"
+              onClick={() => onDateFilter('')}
+            >
+              Ver todos los commits
+            </button>
+            {hasMore && (
+              <button
+                type="button"
+                className="button button-primary button-small"
+                onClick={onLoadMore}
+                disabled={loadingMore}
+              >
+                Cargar más del repositorio
+              </button>
             )}
-          </button>
-        ) : (
-          <div className="commits-end-note">
-            <CheckCircle2 size={15} />
-            <span>Has visualizado todos los commits disponibles en el repositorio.</span>
           </div>
-        )}
-      </div>
+        </div>
+      )}
+
+      {filteredCommits.length > 0 && (
+        <div className="commits-footer-actions">
+          {hasMore ? (
+            <button
+              className="button button-outline load-more-commits-button"
+              type="button"
+              onClick={onLoadMore}
+              disabled={loadingMore}
+            >
+              {loadingMore ? (
+                <>
+                  <RotateCw size={15} className="spinning" />
+                  <span>Cargando más commits…</span>
+                </>
+              ) : (
+                <>
+                  <Plus size={15} />
+                  <span>Ver más commits</span>
+                </>
+              )}
+            </button>
+          ) : (
+            <div className="commits-end-note">
+              <CheckCircle2 size={15} />
+              <span>Has visualizado todos los commits disponibles en el repositorio.</span>
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="github-footnote">
         <Code2 size={15} />
